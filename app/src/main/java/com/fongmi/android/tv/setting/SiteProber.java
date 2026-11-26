@@ -58,7 +58,7 @@ public final class SiteProber {
     public static void probe(List<Site> sites, boolean manual, Callback callback) {
         if (sites == null || sites.isEmpty()) return;
         long now = System.currentTimeMillis();
-        String cid = VodConfig.getCid();
+        String cid = String.valueOf(VodConfig.getCid());
         if (!manual) {
             if (!Setting.isSiteProbeAuto()) return;
             if (now - Setting.getSiteProbeAt(cid) < AUTO_INTERVAL_MS) return;
