@@ -1,0 +1,224 @@
+# 推送自动打包：main 分支有新推送即构建 4 个 dev APK 并创建 prerelease。
+# 版本规则：v{versionName}-dev.{yyyyMMddHHmm}（versionName 取自 app/build.gradle，东八区时间）
+# APK 版本：{versionName}-dev.{7 位短 SHA}；文件名后缀 -dev.{短 SHA}
+# 更新说明：自上一个 dev 版本以来的 Conventional Commits，按类型分组自动生成。
+name: Android Push Build
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      # 纯文档提交不产生新的安装包，跳过可节省大量 CI 时间
+      - '**.md'
+  workflow_dispatch:
+    inputs:
+      fast_build:
+        description: "快速构建（跳过代码压缩与 lint，更快但 APK 更大）"
+        required: false
+        default: true
+        type: boolean
+      extra_notes:
+        description: "附加说明，追加到自动生成的更新内容末尾（支持 \\n 换行）"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+# 同一分支的新推送会取消仍在排队的旧构建
+concurrency:
+  group: push-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    name: Build dev APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Verify bundled MPV native assets
+        run: bash scripts/verify_mpv_native_assets.sh --require-elf
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+
+      - name: Run danmaku unit tests
+        run: |
+          chmod +x ./gradlew
+          ./gradlew \
+            :app:testMobileArm64_v8aDebugUnitTest \
+            --tests 'com.fongmi.android.tv.player.danmaku.*' \
+            --no-daemon
+
+      - name: Resolve build metadata
+        id: meta
+        run: |
+          VERSION_NAME="$(grep -m1 -oE 'versionName.*' app/build.gradle | grep -oE '[0-9]+(\.[0-9]+)+' | head -1)"
+          VERSION_CODE="$(grep -m1 -oE 'versionCode.*' app/build.gradle | grep -oE '[0-9]+' | tail -1)"
+          if [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ]; then
+            echo "::error title=Missing version::无法从 app/build.gradle 解析 versionName/versionCode"
+            exit 1
+          fi
+          STAMP="$(date +%Y%m%d%H%M)"
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          TAG="v${VERSION_NAME}-dev.${STAMP}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error title=Release tag exists::${TAG} already exists"
+            exit 1
+          fi
+          {
+            echo "tag=${TAG}"
+            echo "title=${TAG#v}"
+            echo "version_name=${VERSION_NAME}"
+            echo "version_code=${VERSION_CODE}"
+            echo "apk_version_name=${VERSION_NAME}-dev.${SHORT_SHA}"
+            echo "short_sha=${SHORT_SHA}"
+            echo "apk_suffix=-dev.${SHORT_SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        env:
+          DEV_TAG: ${{ steps.meta.outputs.tag }}
+          DEV_VERSION: ${{ steps.meta.outputs.apk_version_name }}
+          SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
+          EXTRA_NOTES: ${{ inputs.extra_notes }}
+        run: python3 .github/scripts/gen-push-release-notes.py
+
+      - name: Configure release signing (optional)
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          KS_BASE64="${RELEASE_KEYSTORE_BASE64:-$KEYSTORE_BASE64}"
+          STORE_PASSWORD="${RELEASE_STORE_PASSWORD:-$KEY_PASSWORD}"
+          ALIAS="${RELEASE_KEY_ALIAS:-$KEY_ALIAS}"
+          KEY_PASS="${RELEASE_KEY_PASSWORD:-$STORE_PASSWORD}"
+          if [ -z "$KS_BASE64" ] || [ -z "$STORE_PASSWORD" ] || [ -z "$ALIAS" ]; then
+            echo "::warning title=Release signing not configured::未配置签名密钥，本次 dev APK 使用 debug 签名，无法覆盖安装正式版。"
+            exit 0
+          fi
+          mkdir -p app/signing
+          printf '%s' "$KS_BASE64" | base64 --decode > app/signing/release.jks
+          {
+            echo "storeFile=$GITHUB_WORKSPACE/app/signing/release.jks"
+            echo "keyAlias=$ALIAS"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyPassword=$KEY_PASS"
+          } > local.properties
+          echo "Release signing configured"
+
+      - name: Build APKs
+        env:
+          WEBHTV_RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          WEBHTV_APK_SUFFIX: ${{ steps.meta.outputs.apk_suffix }}
+          WEBHTV_VERSION_NAME: ${{ steps.meta.outputs.apk_version_name }}
+        run: |
+          chmod +x ./gradlew
+          rm -rf Release/apk
+          FAST_ARGS=""
+          if [ "${{ inputs.fast_build || 'true' }}" = "true" ]; then
+            FAST_ARGS="-PfastRelease=true"
+          fi
+          ./gradlew \
+            :app:assembleMobileArm64_v8aRelease \
+            :app:assembleMobileArmeabi_v7aRelease \
+            :app:assembleLeanbackArm64_v8aRelease \
+            :app:assembleLeanbackArmeabi_v7aRelease \
+            $FAST_ARGS \
+            --no-daemon
+
+      - name: Collect artifacts
+        run: |
+          rm -rf dist
+          mkdir -p dist build
+          cp Release/apk/*.apk dist/
+          ls -lh dist/
+
+      - name: Generate update manifests
+        env:
+          DEV_TAG: ${{ steps.meta.outputs.tag }}
+          DEV_VERSION: ${{ steps.meta.outputs.apk_version_name }}
+          VERSION_CODE: ${{ steps.meta.outputs.version_code }}
+          SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
+          RELEASE_DOWNLOAD_BASE: https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}
+          NOTES_FILE: build/release-notes.md
+        run: |
+          python3 .github/scripts/gen-push-manifests.py
+          ls -lh dist/
+
+      - name: Create dev prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.meta.outputs.title }}" \
+            --notes-file build/release-notes.md \
+            --prerelease \
+            dist/*.apk dist/*.json
+
+      - name: Prune old dev prereleases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP_COUNT: "10"
+        run: |
+          gh release list --limit 200 --json tagName,isPrerelease,createdAt > releases.json
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+
+          keep = int(os.environ["KEEP_COUNT"])
+          with open("releases.json", encoding="utf-8") as fh:
+              releases = json.load(fh)
+          pattern = re.compile(r"^v\d+\.\d+\.\d+-dev\.\d{12}$")
+          dev = [r for r in releases
+                 if r.get("isPrerelease") and pattern.match(r.get("tagName", ""))]
+          dev.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
+          for release in dev[keep:]:
+              tag = release["tagName"]
+              print("Deleting old dev prerelease:", tag)
+              subprocess.run(["gh", "release", "delete", tag, "--yes", "--cleanup-tag"], check=False)
+          PY
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: webhtv-dev-${{ steps.meta.outputs.short_sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

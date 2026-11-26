@@ -16,6 +16,9 @@ def buildTimestamp = new Date().format('yyyyMMddHHmm', TimeZone.getTimeZone('Asi
 def buildTime = fastRelease ? "fast-${buildTimestamp}" : buildTimestamp
 def releaseTag = (System.getenv('WEBHTV_RELEASE_TAG') ?: '').replace('\\', '\\\\').replace('"', '\\"')
 def apkSuffix = (System.getenv('WEBHTV_APK_SUFFIX') ?: '').replaceAll('[^A-Za-z0-9._-]', '')
+// CI 注入的版本覆盖（推送自动构建使用；本地构建与旧流程不受影响）
+def pushVersionName = (System.getenv('WEBHTV_VERSION_NAME') ?: '').replaceAll('[^A-Za-z0-9._+-]', '')
+def pushVersionCode = System.getenv('WEBHTV_VERSION_CODE')?.replaceAll('[^0-9]', '')
 def gitRevision = 'unavailable'
 def gitState = 'unavailable'
 def mpvSourceLock = new groovy.json.JsonSlurper().parse(rootProject.file('third_party/mpv-native-lock.json'))
@@ -38,8 +41,8 @@ android {
         applicationId "com.fongmi.android.tv"
         minSdk libs.versions.minSdk.get().toInteger()
         targetSdk libs.versions.targetSdk.get().toInteger()
-        versionCode 560
-        versionName "5.6.0"
+        versionCode pushVersionCode ? pushVersionCode.toInteger() : 560
+        versionName pushVersionName ?: "5.6.0"
         buildConfigField "String", "BUILD_TIME", "\"${buildTime}\""
         buildConfigField "String", "BUILD_TAG", "\"${releaseTag}\""
         buildConfigField "String", "GIT_REVISION", "\"${gitRevision}\""
