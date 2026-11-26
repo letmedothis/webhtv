@@ -28,6 +28,7 @@ import com.fongmi.android.tv.databinding.DialogSiteBinding;
 import com.fongmi.android.tv.impl.SiteListener;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.setting.SiteBlockSetting;
+import com.fongmi.android.tv.setting.SiteProber;
 import com.fongmi.android.tv.ui.adapter.SiteAdapter;
 import com.fongmi.android.tv.ui.custom.CustomTextListener;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
@@ -94,6 +95,11 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         binding.recycler.setItemAnimator(null);
         binding.recycler.setHasFixedSize(true);
         attachSortTouchHelper();
+        binding.probe.setAllCaps(false);
+        binding.sort.setAllCaps(false);
+        binding.summary.setText("");
+        updateSortButton();
+        startProbe(false);
         binding.recycler.post(() -> binding.recycler.scrollToPosition(0));
     }
 
@@ -136,6 +142,48 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         });
         binding.block.setOnClickListener(this::onBlockToggle);
         binding.search.setOnClickListener(this::onColumnToggle);
+        binding.probe.setOnClickListener(v -> startProbe(true));
+        binding.sort.setOnClickListener(v -> togglePerfSort());
+    }
+
+    private void updateSortButton() {
+        boolean on = Setting.isSitePerfSort();
+        binding.sort.setText(ResUtil.getString(on ? R.string.site_sort_speed : R.string.site_sort_default));
+        binding.sort.setContentDescription(ResUtil.getString(R.string.setting_site_perf_sort));
+        binding.sort.setSelected(on);
+        binding.sort.setAlpha(on ? 1.0f : 0.65f);
+    }
+
+    private void togglePerfSort() {
+        Setting.putSitePerfSort(!Setting.isSitePerfSort());
+        updateSortButton();
+        if (adapter != null) adapter.applyHealthSort();
+        binding.recycler.scrollToPosition(0);
+    }
+
+    private void startProbe(boolean manual) {
+        if (adapter == null) return;
+        SiteProber.probe(adapter.getAllItems(), manual, new SiteProber.Callback() {
+            @Override
+            public void onProgress(int done, int total) {
+                if (binding == null) return;
+                binding.summary.setText(ResUtil.getString(R.string.site_probe_progress, done, total));
+                if (adapter != null) adapter.refreshHealthLabels();
+            }
+
+            @Override
+            public void onFinished() {
+                if (binding == null) return;
+                binding.summary.setText(ResUtil.getString(R.string.site_probe_finished));
+                if (adapter != null) adapter.applyHealthSort();
+            }
+        });
+    }
+
+    @Override
+    public void onDestroy() {
+        SiteProber.cancel();
+        super.onDestroy();
     }
 
     private void onBlockToggle(View view) {
@@ -256,6 +304,7 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
 
     @Override
     public boolean onTextLongClick(SiteAdapter.ViewHolder holder) {
+        if (Setting.isSitePerfSort()) return false;
         if (sortTouchHelper == null || holder.getBindingAdapterPosition() == RecyclerView.NO_POSITION) return false;
         Util.hideKeyboard(binding.keyword);
         sortTouchHelper.startDrag(holder);

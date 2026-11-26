@@ -87,13 +87,28 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
 
     private void addAll() {
         mAllItems.addAll(SiteBlockSetting.filter(VodConfig.get().getSites(), block));
-        if (Setting.isSiteHealthDialogSort()) SiteHealthStore.sortSites(mAllItems);
-        SiteOrderStore.sortSites(mAllItems);
+        if (Setting.isSitePerfSort()) SiteHealthStore.sortBySpeed(mAllItems);
+        else {
+            if (Setting.isSiteHealthDialogSort()) SiteHealthStore.sortSites(mAllItems);
+            SiteOrderStore.sortSites(mAllItems);
+        }
         filter(group, keyword);
+    }
+
+    public List<Site> getAllItems() {
+        return mAllItems;
     }
 
     public List<Site> getItems() {
         return mItems;
+    }
+
+    public void refreshHealthLabels() {
+        notifyItemRangeChanged(0, getItemCount());
+    }
+
+    public void applyHealthSort() {
+        reload();
     }
 
     public int getSelectedPosition() {
@@ -165,11 +180,13 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
         boolean singleColumn = column == 1;
         holder.binding.text.setText(item.getName());
         holder.binding.health.setBackgroundTintList(ColorStateList.valueOf(SiteHealthStore.getColor(item)));
+        holder.binding.healthText.setText(SiteHealthStore.getLabel(item));
         holder.binding.text.setEnabled(on);
         holder.binding.text.setFocusable(on);
         holder.binding.text.setSelected(block ? blocked : on && item.isSelected());
         holder.binding.text.setAlpha(block && blocked ? 0.55f : 1.0f);
         holder.binding.health.setAlpha(block && blocked ? 0.55f : 1.0f);
+        holder.binding.healthText.setAlpha(block && blocked ? 0.55f : 1.0f);
         holder.binding.search.setImageResource(getSearchIcon(item));
         holder.binding.change.setImageResource(getChangeIcon(item));
         holder.binding.search.setVisibility(!block && search && singleColumn ? View.VISIBLE : View.GONE);

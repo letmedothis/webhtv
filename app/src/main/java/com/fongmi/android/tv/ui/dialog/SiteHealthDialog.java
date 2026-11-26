@@ -22,6 +22,7 @@ public class SiteHealthDialog extends BaseAlertDialog {
     private Runnable callback;
     private boolean healthSort;
     private boolean dialogSort;
+    private boolean probeAuto;
 
     public static void show(Fragment fragment, Runnable callback) {
         SiteHealthDialog dialog = new SiteHealthDialog();
@@ -65,8 +66,10 @@ public class SiteHealthDialog extends BaseAlertDialog {
     protected void initView() {
         healthSort = Setting.isSiteHealthSort();
         dialogSort = Setting.isSiteHealthDialogSort();
+        probeAuto = Setting.isSiteProbeAuto();
         updateButton(binding.healthSort, healthSort);
         updateButton(binding.dialogSort, dialogSort);
+        updateButton(binding.probeAuto, probeAuto);
     }
 
     @Override
@@ -78,6 +81,10 @@ public class SiteHealthDialog extends BaseAlertDialog {
         binding.dialogSort.setOnClickListener(view -> {
             dialogSort = !dialogSort;
             updateButton(binding.dialogSort, dialogSort);
+        });
+        binding.probeAuto.setOnClickListener(view -> {
+            probeAuto = !probeAuto;
+            updateButton(binding.probeAuto, probeAuto);
         });
         binding.negative.setOnClickListener(view -> dismiss());
         binding.positive.setOnClickListener(view -> onPositive());
@@ -91,6 +98,7 @@ public class SiteHealthDialog extends BaseAlertDialog {
     private void onPositive() {
         Setting.putSiteHealthSort(healthSort);
         Setting.putSiteHealthDialogSort(dialogSort);
+        Setting.putSiteProbeAuto(probeAuto);
         if (callback != null) callback.run();
         dismiss();
     }

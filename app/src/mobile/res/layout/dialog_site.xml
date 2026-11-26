@@ -63,6 +63,53 @@
 
     </androidx.appcompat.widget.LinearLayoutCompat>
 
+    <androidx.appcompat.widget.LinearLayoutCompat
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/probe"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:minHeight="36dp"
+            android:minWidth="0dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/site_probe"
+            android:textColor="@color/dialog_tonal_button_text"
+            app:backgroundTint="@color/dialog_tonal_button_bg" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/sort"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:minHeight="36dp"
+            android:minWidth="0dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/site_sort_speed"
+            android:textColor="@color/dialog_tonal_button_text"
+            app:backgroundTint="@color/dialog_tonal_button_bg" />
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/summary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:singleLine="true"
+            android:textColor="@color/dialog_outlined_button_text"
+            android:textSize="12sp" />
+
+    </androidx.appcompat.widget.LinearLayoutCompat>
+
     <HorizontalScrollView
         android:id="@+id/groupScroll"
         android:layout_width="match_parent"

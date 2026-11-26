@@ -18,6 +18,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.LiveConfig;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Config;
@@ -25,6 +26,8 @@ import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.databinding.DialogSiteBinding;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.impl.SiteListener;
+import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.setting.SiteProber;
 import com.fongmi.android.tv.ui.adapter.SiteAdapter;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
 import com.fongmi.android.tv.utils.Notify;
@@ -119,6 +122,7 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         initEvent();
         log("shell init end cost=%sms total=%sms", cost(initStart), cost());
         directDialog.setOnDismissListener(d -> {
+            SiteProber.cancel();
             directDialog = null;
             binding = null;
             this.activity = null;
@@ -151,6 +155,10 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         binding.select.setVisibility(action ? View.VISIBLE : View.GONE);
         binding.cancel.setVisibility(action ? View.VISIBLE : View.GONE);
         binding.mode.setVisibility(View.GONE);
+        binding.probe.setAllCaps(false);
+        binding.sort.setAllCaps(false);
+        binding.summary.setText("");
+        updateSortButton();
         setActionEnabled(false);
         binding.recycler.setAdapter(null);
         binding.recycler.setItemAnimator(null);
@@ -177,6 +185,7 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         setMode();
         setActionEnabled(true);
         log("view configured cost=%sms total=%sms", cost(layoutStart), cost());
+        startProbe(false);
         runAfterFirstPreDraw("list preDraw", () -> {
             if (adapter != null) adapter.showAll();
             log("list expanded total=%sms items=%s", cost(), adapter == null ? -1 : adapter.getItemCount());
@@ -185,6 +194,8 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
 
     @Override
     protected void initEvent() {
+        binding.probe.setOnClickListener(v -> startProbe(true));
+        binding.sort.setOnClickListener(v -> togglePerfSort());
         binding.config.setOnClickListener(v -> {
             FragmentActivity activity = getDialogActivity();
             dismiss();
@@ -267,6 +278,43 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         binding.cancel.setEnabled(enabled && type > 0);
     }
 
+    private void updateSortButton() {
+        if (binding == null) return;
+        boolean on = Setting.isSitePerfSort();
+        binding.sort.setText(ResUtil.getString(on ? R.string.site_sort_speed : R.string.site_sort_default));
+        binding.sort.setContentDescription(ResUtil.getString(R.string.setting_site_perf_sort));
+        binding.sort.setSelected(on);
+        binding.sort.setAlpha(on ? 1.0f : 0.65f);
+    }
+
+    private void togglePerfSort() {
+        Setting.putSitePerfSort(!Setting.isSitePerfSort());
+        updateSortButton();
+        if (adapter == null) return;
+        adapter.applyHealthSort();
+        setRecyclerView();
+        setRecyclerHeight(adapter.getItemCount());
+    }
+
+    private void startProbe(boolean manual) {
+        if (adapter == null) return;
+        SiteProber.probe(adapter.getAllItems(), manual, new SiteProber.Callback() {
+            @Override
+            public void onProgress(int done, int total) {
+                if (binding == null) return;
+                binding.summary.setText(ResUtil.getString(R.string.site_probe_progress, done, total));
+                if (adapter != null) adapter.refreshHealthLabels();
+            }
+
+            @Override
+            public void onFinished() {
+                if (binding == null) return;
+                binding.summary.setText(ResUtil.getString(R.string.site_probe_finished));
+                if (adapter != null) adapter.applyHealthSort();
+            }
+        });
+    }
+
     @Override
     public void onItemClick(Site item) {
         if (listener != null) listener.setSite(item);
@@ -341,6 +389,7 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
 
     @Override
     public void dismiss() {
+        SiteProber.cancel();
         if (directDialog != null) directDialog.dismiss();
         else super.dismiss();
     }

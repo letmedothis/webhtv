@@ -33,6 +33,7 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
     private boolean firstBindLogged;
     private int displayLimit = Integer.MAX_VALUE;
     private int type;
+    private String keyword = "";
 
     public SiteAdapter(OnClickListener listener) {
         this.adapterStart = System.currentTimeMillis();
@@ -57,7 +58,8 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
     }
 
     public void filter(String keyword) {
-        String text = keyword == null ? "" : keyword.trim().toLowerCase(Locale.getDefault());
+        this.keyword = keyword == null ? "" : keyword;
+        String text = this.keyword.trim().toLowerCase(Locale.getDefault());
         mItems.clear();
         for (Site site : allItems) if (text.isEmpty() || site.getName().toLowerCase(Locale.getDefault()).contains(text) || site.getKey().toLowerCase(Locale.getDefault()).contains(text)) mItems.add(site);
         displayLimit = Integer.MAX_VALUE;
@@ -74,18 +76,37 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
 
     private void addAll() {
         long collectStart = System.currentTimeMillis();
-        for (Site site : VodConfig.get().getSites()) if (!site.isHide()) allItems.add(site);
+        collect();
         log("collect sites cost=%sms visible=%s", cost(collectStart), allItems.size());
-        if (Setting.isSiteHealthDialogSort()) {
-            long sortStart = System.currentTimeMillis();
-            SiteHealthStore.sortSites(allItems);
-            log("health sort cost=%sms visible=%s", cost(sortStart), allItems.size());
-        }
         mItems.addAll(allItems);
+    }
+
+    private void collect() {
+        allItems.clear();
+        for (Site site : VodConfig.get().getSites()) if (!site.isHide()) allItems.add(site);
+        long sortStart = System.currentTimeMillis();
+        if (Setting.isSitePerfSort()) SiteHealthStore.sortBySpeed(allItems);
+        else if (Setting.isSiteHealthDialogSort()) SiteHealthStore.sortSites(allItems);
+        log("health sort cost=%sms visible=%s", cost(sortStart), allItems.size());
+    }
+
+    public List<Site> getAllItems() {
+        return allItems;
     }
 
     public List<Site> getItems() {
         return mItems;
+    }
+
+    public void refreshHealthLabels() {
+        notifyItemRangeChanged(0, getItemCount());
+    }
+
+    public void applyHealthSort() {
+        int limit = displayLimit;
+        collect();
+        filter(keyword);
+        displayLimit = limit;
     }
 
     public int getTotalCount() {
@@ -210,12 +231,14 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
             if (actionBinding != null) {
                 actionBinding.text.setText(item.getName());
                 actionBinding.health.setBackgroundTintList(ColorStateList.valueOf(SiteHealthStore.getColor(item)));
+                actionBinding.healthText.setText(SiteHealthStore.getLabel(item));
                 actionBinding.check.setChecked(getChecked(item));
                 actionBinding.text.setSelected(item.isSelected());
                 actionBinding.getRoot().setSelected(item.isSelected());
             } else {
                 switchBinding.text.setText(item.getName());
                 switchBinding.health.setBackgroundTintList(ColorStateList.valueOf(SiteHealthStore.getColor(item)));
+                switchBinding.healthText.setText(SiteHealthStore.getLabel(item));
                 switchBinding.text.setSelected(item.isSelected());
                 switchBinding.getRoot().setSelected(item.isSelected());
             }

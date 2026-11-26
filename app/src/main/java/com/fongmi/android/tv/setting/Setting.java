@@ -491,6 +491,30 @@ public class Setting {
         Prefers.put("site_health_dialog_sort", sort);
     }
 
+    public static boolean isSiteProbeAuto() {
+        return Prefers.getBoolean("site_probe_auto", true);
+    }
+
+    public static void putSiteProbeAuto(boolean auto) {
+        Prefers.put("site_probe_auto", auto);
+    }
+
+    public static boolean isSitePerfSort() {
+        return Prefers.getBoolean("site_perf_sort", true);
+    }
+
+    public static void putSitePerfSort(boolean sort) {
+        Prefers.put("site_perf_sort", sort);
+    }
+
+    public static long getSiteProbeAt(String cid) {
+        return Prefers.getLong("site_probe_at_" + cid, 0);
+    }
+
+    public static void putSiteProbeAt(String cid, long time) {
+        Prefers.put("site_probe_at_" + cid, time);
+    }
+
     public static boolean isWebHomeExtension() {
         return Prefers.getBoolean("web_home_extension", true);
     }
